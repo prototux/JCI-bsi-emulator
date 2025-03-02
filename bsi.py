@@ -121,6 +121,8 @@ class ARMv7Emulator:
 
     def step(self):
         pc = self.mu.reg_read(UC_ARM_REG_PC)
+        if self.mode == 'THUMB':
+            pc += 1
         try:
             self.mu.emu_start(pc, pc + 2 if self.mode == 'THUMB' else 4, count=1)
         except Exception as e:
@@ -149,6 +151,12 @@ class ARMv7Emulator:
     # Shit, should be removed
     def menu(self):
         while True:
+
+            if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20:
+                self.mode = 'THUMB'
+                print('THUMB MODE SWITCH')
+
+
             print("\nMenu:")
             print("1. Step Over Instruction")
             print("2. Show Memory Dump")

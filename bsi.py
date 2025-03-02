@@ -19,7 +19,20 @@ DEVICE_SIZE = 0x00200000 # Until the end
 
 class ARMv7Emulator:
     def __init__(self, rom_file):
-        self.mu = Uc(UC_ARCH_ARM, UC_MODE_ARM)
+        # Load ROM
+        with open(rom_file, 'rb') as f:
+            self.rom_data = f.read()
+
+        self.mode = 'ARM'
+
+        self.init(0x4000000)
+
+        # Start and skip entrypoint
+        self.mu.emu_start(0x40000000, 0xffffffff, count=5)
+
+    def init(self, pc):
+        self.mu = Uc(UC_ARCH_ARM, UC_MODE_ARM|UC_MODE_THUMB)
+        #self.mu = Uc(UC_ARCH_ARM, UC_MODE_THUMB if self.mode == 'THUMB' else UC_MODE_ARM, UC_CPU_ARM_CORTEX_A15)
 
         # Map memory
         self.mu.mem_map(ROM_BASE, ROM_SIZE)
@@ -27,19 +40,16 @@ class ARMv7Emulator:
         self.mu.mem_map(DEVICE_BASE, DEVICE_SIZE)
 
         # Disasm
-        self.disasm = Cs(CS_ARCH_ARM, CS_MODE_ARM)
+        self.disasm = Cs(CS_ARCH_ARM, CS_MODE_THUMB if self.mode == 'THUMB' else CS_MODE_ARM)
 
-        # Load ROM
-        with open(rom_file, 'rb') as f:
-            self.rom_data = f.read()
-            self.mu.mem_write(ROM_BASE, self.rom_data[:ROM_SIZE])
+        # Load "flash"
+        self.mu.mem_write(ROM_BASE, self.rom_data[:ROM_SIZE])
 
         # Add memory hooks
         self.mu.hook_add(UC_HOOK_MEM_READ | UC_HOOK_MEM_WRITE, self.mem_hook)
         self.mu.hook_add(UC_HOOK_CODE, self.hook_code, None)
 
-        # Start and skip entrypoint
-        self.mu.emu_start(0x40000000, 0xffffffff, count=5)
+        self.mu.reg_write(UC_ARM_REG_PC, pc)
 
     def dis(self, code):
         dis = self.disasm.disasm(code, 0x0)
@@ -48,11 +58,46 @@ class ARMv7Emulator:
             ret += f'{i.mnemonic} {i.op_str}'
         return ret
 
+
+    # Unused, tried to do so much to enable thumb, it still doesn't work
+    def switchmode(self, mode):
+
+        registers = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5,
+                     UC_ARM_REG_R6, UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11,
+                     UC_ARM_REG_R12]
+
+        bkp = []
+        for reg in registers:
+            bkp.append(self.mu.reg_read(reg))
+
+        #ctx = self.mu.context_save()
+        to = self.mu.reg_read(UC_ARM_REG_R12)
+        print(f'[EXEC] Switch mode to {mode}')
+        self.init(self.mu.reg_read(UC_ARM_REG_PC+1))
+        self.mu.reg_write(UC_ARM_REG_PC, to)
+
+
+        i = 0
+        for reg in registers:
+            self.mu.reg_write(reg, bkp[i])
+            i+=1
+
+
     def hook_code(self, uc, address, size, user_data):
         if ROM_BASE <= address < ROM_BASE + ROM_SIZE:
             offset = address - ROM_BASE
             instr_bytes = self.rom_data[offset:offset+size]
             instr_hex = ' '.join(f"{b:02X}" for b in instr_bytes)
+
+            print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
+            # Manage thumb/arm mode switch
+            #if instr_bytes == b'\x1c\xff\x2f\xe1':
+            #    print('BX spotted!')
+            #    if self.mu.reg_read(UC_ARM_REG_R12) & 0x01:
+            #        self.switchmode('THUMB')
+            #    else:
+            #        self.switchmode('ARM')
+
             print(f"[CODE] Executing at {hex(address)}, size: {size} bytes, instruction: {instr_hex} ({self.dis(instr_bytes)})")
 
     def mem_hook(self, uc, access, address, size, value, user_data):
@@ -77,7 +122,7 @@ class ARMv7Emulator:
     def step(self):
         pc = self.mu.reg_read(UC_ARM_REG_PC)
         try:
-            self.mu.emu_start(pc, pc + 4, count=1)
+            self.mu.emu_start(pc, pc + 2 if self.mode == 'THUMB' else 4, count=1)
         except Exception as e:
             print(f"[ERROR] {e}")
 
@@ -112,7 +157,7 @@ class ARMv7Emulator:
             print("5. Exit")
             choice = input("Select an option: ")
 
-            if choice == '1':
+            if choice == '1' or choice == '':
                 self.step()
             elif choice == '2':
                 self.dump_memory(RAM_BASE, RAM_SIZE, "RAM")

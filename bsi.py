@@ -1,9 +1,8 @@
 from unicorn import * #Uc, UC_ARCH_ARM, UC_MODE_ARM
 from unicorn.arm_const import *
-
 from capstone import *
-
 import hexdump
+import sys
 
 from peripherals import *
 
@@ -59,7 +58,14 @@ class ARMv7Emulator:
     def mem_hook(self, uc, access, address, size, value, user_data):
         # Handle devices
         if address > DEVICE_BASE and address < (DEVICE_BASE + DEVICE_SIZE):
-            print(f'[DEVICE] Device access @ 0x{address:02x}')
+            for name, p in peripherals.items():
+                if address > p['addr'] and address < p['addr']+p['size']:
+                    print(f'[DEVICE] Device {name} access @ 0x{address:02x}')
+                    if access == UC_MEM_READ:
+                        p['handler'].read(address-p['addr'])
+                    elif access == UC_MEM_WRITE:
+                        p['handler'].write(address-p['addr'], value)
+
 
     def step(self):
         pc = self.mu.reg_read(UC_ARM_REG_PC)

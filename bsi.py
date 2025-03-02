@@ -56,10 +56,17 @@ class ARMv7Emulator:
             print(f"[CODE] Executing at {hex(address)}, size: {size} bytes, instruction: {instr_hex} ({self.dis(instr_bytes)})")
 
     def mem_hook(self, uc, access, address, size, value, user_data):
-        # Handle devices
+        # Handle devices, first check that we're indeed in the devices memory space
         if address > DEVICE_BASE and address < (DEVICE_BASE + DEVICE_SIZE):
             for name, p in peripherals.items():
                 if address > p['addr'] and address < p['addr']+p['size']:
+
+                    # Device isn't supported, get the fuck out of here
+                    if not p['handler']:
+                        print(f'[DEVICE] Error: device {name} is not supported!')
+                        break
+
+                    # Send request to device
                     print(f'[DEVICE] Device {name} access @ 0x{address:02x}')
                     if access == UC_MEM_READ:
                         p['handler'].read(address-p['addr'])

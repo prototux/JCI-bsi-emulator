@@ -4,7 +4,7 @@ from capstone import *
 import hexdump
 import sys
 
-from peripherals import *
+from devices import *
 
 
 # Memory map configuration
@@ -40,7 +40,7 @@ class ARMv7Emulator:
         self.mu.mem_map(DEVICE_BASE, DEVICE_SIZE)
 
         # Disasm
-        self.disasm = Cs(CS_ARCH_ARM, CS_MODE_THUMB if self.mode == 'THUMB' else CS_MODE_ARM)
+        self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB if self.mode == 'THUMB' else CS_MODE_ARM)
 
         # Load "flash"
         self.mu.mem_write(ROM_BASE, self.rom_data[:ROM_SIZE])
@@ -52,51 +52,32 @@ class ARMv7Emulator:
         self.mu.reg_write(UC_ARM_REG_PC, pc)
 
     def dis(self, code):
-        dis = self.disasm.disasm(code, 0x0)
+        dis = self.cs.disasm(code, 0x0)
         ret = ''
         for i in dis:
             ret += f'{i.mnemonic} {i.op_str}'
         return ret
 
+    # ARM/THUMB switch management
+    def switchmode(self, newmode):
+        print(f'[MODE] current = {self.mode} new = {newmode}')
+        # We didn't actually switch, all is okay
+        if self.mode == newmode:
+            return
 
-    # Unused, tried to do so much to enable thumb, it still doesn't work
-    def switchmode(self, mode):
-
-        registers = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5,
-                     UC_ARM_REG_R6, UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11,
-                     UC_ARM_REG_R12]
-
-        bkp = []
-        for reg in registers:
-            bkp.append(self.mu.reg_read(reg))
-
-        #ctx = self.mu.context_save()
-        to = self.mu.reg_read(UC_ARM_REG_R12)
-        print(f'[EXEC] Switch mode to {mode}')
-        self.init(self.mu.reg_read(UC_ARM_REG_PC+1))
-        self.mu.reg_write(UC_ARM_REG_PC, to)
-
-
-        i = 0
-        for reg in registers:
-            self.mu.reg_write(reg, bkp[i])
-            i+=1
-
+        # We do switch
+        print(f'[MODE] Switch from {self.mode} to {newmode}')
+        self.mode = newmode
+        self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB if newmode == 'THUMB' else CS_MODE_ARM)
 
     def hook_code(self, uc, address, size, user_data):
+        print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
         if ROM_BASE <= address < ROM_BASE + ROM_SIZE:
             offset = address - ROM_BASE
             instr_bytes = self.rom_data[offset:offset+size]
             instr_hex = ' '.join(f"{b:02X}" for b in instr_bytes)
 
-            print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
-            # Manage thumb/arm mode switch
-            #if instr_bytes == b'\x1c\xff\x2f\xe1':
-            #    print('BX spotted!')
-            #    if self.mu.reg_read(UC_ARM_REG_R12) & 0x01:
-            #        self.switchmode('THUMB')
-            #    else:
-            #        self.switchmode('ARM')
+            #print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
 
             print(f"[CODE] Executing at {hex(address)}, size: {size} bytes, instruction: {instr_hex} ({self.dis(instr_bytes)})")
 
@@ -114,9 +95,9 @@ class ARMv7Emulator:
                     # Send request to device
                     print(f'[DEVICE] Device {name} access @ 0x{address:02x}')
                     if access == UC_MEM_READ:
-                        p['handler'].read(address-p['addr'])
+                        p['handler']._read(address-p['addr'])
                     elif access == UC_MEM_WRITE:
-                        p['handler'].write(address-p['addr'], value)
+                        p['handler']._write(address-p['addr'], value)
 
 
     def step(self):
@@ -151,12 +132,7 @@ class ARMv7Emulator:
     # Shit, should be removed
     def menu(self):
         while True:
-
-            if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20:
-                self.mode = 'THUMB'
-                print('THUMB MODE SWITCH')
-
-
+            self.switchmode('THUMB' if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20 else 'ARM')
             print("\nMenu:")
             print("1. Step Over Instruction")
             print("2. Show Memory Dump")
@@ -178,7 +154,3 @@ class ARMv7Emulator:
             else:
                 print("Invalid option, try again.")
 
-
-if __name__ == "__main__":
-    emulator = ARMv7Emulator("bootloader.bin")
-    emulator.menu()

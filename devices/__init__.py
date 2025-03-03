@@ -1,6 +1,6 @@
 #Peripherals management
 
-from IFC import *
+from devices.IFC import *
 
 # List of peripherals, Devices with None handler are unsupported yet
 peripherals = {

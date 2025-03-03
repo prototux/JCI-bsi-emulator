@@ -27,6 +27,8 @@ class ARMv7Emulator:
 
         self.init(0x4000000)
 
+        self.breakpoints = []
+
         # Start and skip entrypoint
         self.mu.emu_start(0x40000000, 0xffffffff, count=5)
 
@@ -60,7 +62,6 @@ class ARMv7Emulator:
 
     # ARM/THUMB switch management
     def switchmode(self, newmode):
-        print(f'[MODE] current = {self.mode} new = {newmode}')
         # We didn't actually switch, all is okay
         if self.mode == newmode:
             return
@@ -71,6 +72,12 @@ class ARMv7Emulator:
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB if newmode == 'THUMB' else CS_MODE_ARM)
 
     def hook_code(self, uc, address, size, user_data):
+         # Handle breakpoints
+        for bp in self.breakpoints:
+            if address == bp:
+                print(f'[BREAKPOINT] Hit bp at {address}')
+                self.mu.emu_stop()
+
         print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
         if ROM_BASE <= address < ROM_BASE + ROM_SIZE:
             offset = address - ROM_BASE
@@ -99,6 +106,14 @@ class ARMv7Emulator:
                     elif access == UC_MEM_WRITE:
                         p['handler']._write(address-p['addr'], value)
 
+    def start(self):
+        pc = self.mu.reg_read(UC_ARM_REG_PC)
+        if self.mode == 'THUMB':
+            pc += 1
+        try:
+            self.mu.emu_start(pc, 0xfffffffff)
+        except Exception as e:
+            print(f"[ERROR] {e}")
 
     def step(self):
         pc = self.mu.reg_read(UC_ARM_REG_PC)
@@ -135,21 +150,28 @@ class ARMv7Emulator:
             self.switchmode('THUMB' if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20 else 'ARM')
             print("\nMenu:")
             print("1. Step Over Instruction")
-            print("2. Show Memory Dump")
-            print("3. Show Registers")
-            print("4. Show ROM Dump")
-            print("5. Exit")
+            print("2. Start Emulation")
+            print("3. Show Memory Dump")
+            print("4. Show Registers")
+            print("5. Show ROM Dump")
+            print("6. Set breakpoint")
+            print("0. Exit")
             choice = input("Select an option: ")
 
             if choice == '1' or choice == '':
                 self.step()
             elif choice == '2':
-                self.dump_memory(RAM_BASE, RAM_SIZE, "RAM")
+                self.start()
             elif choice == '3':
-                self.dump_registers()
+                self.dump_memory(RAM_BASE, RAM_SIZE, "RAM")
             elif choice == '4':
-                self.dump_memory(ROM_BASE, ROM_SIZE, "ROM")
+                self.dump_registers()
             elif choice == '5':
+                self.dump_memory(ROM_BASE, ROM_SIZE, "ROM")
+            elif choice == '6':
+                addr = int(input("Address: "), 16)
+                self.breakpoints.append(addr)
+            elif choice == '0':
                 sys.exit(0)
             else:
                 print("Invalid option, try again.")

@@ -129,6 +129,11 @@ class ARMv7Emulator:
         data = self.mu.mem_read(base, min(size, 256))  # Limit the output size
         hexdump.hexdump(data)
 
+    def memdump(self, path):
+        ram = self.mu.mem_read(0x000000000, 32*1024)
+        with open(path, 'wb') as file:
+            file.write(ram)
+
     def dump_registers(self):
         registers = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5,
                      UC_ARM_REG_R6, UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11,
@@ -155,6 +160,7 @@ class ARMv7Emulator:
             print("4. Show Registers")
             print("5. Show ROM Dump")
             print("6. Set breakpoint")
+            print("7. Write memdump")
             print("0. Exit")
             choice = input("Select an option: ")
 
@@ -171,6 +177,8 @@ class ARMv7Emulator:
             elif choice == '6':
                 addr = int(input("Address: "), 16)
                 self.breakpoints.append(addr)
+            elif choice == '7':
+                self.memdump(input("File path: "))
             elif choice == '0':
                 sys.exit(0)
             else:

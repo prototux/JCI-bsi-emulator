@@ -18,12 +18,16 @@ class Device:
                     print(f'[DEVICE][{self._name}] ERROR: Trying to {type} a register with {r["access"]} flags!')
 
                 # Generic log
-                print(f'[DEVICE][{self._name}] Access register {name}:{type} (0x{data:02x})')
+                print(f'[DEVICE][{self._name}] Access register {name}:{type} ' + (f'(0x{data:02x})' if data else ''))
 
                 # Check if method exists
                 method = getattr(self, f'{name}_{type}', None)
                 if method and callable(method):
-                    method(data) if data else method()
+                    if data:
+                        method(data) 
+                    else: 
+                        method()
+                        return self.regs[r['offset']]
                 # Generic access: simple write and read registers
                 elif type == 'R':
                     return self.regs[r['offset']]
@@ -35,4 +39,4 @@ class Device:
         return self._access('R', reg)
 
     def _write(self, reg, data):
-        self._access('W', reg, data)
+        return self._access('W', reg, data)

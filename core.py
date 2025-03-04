@@ -1,6 +1,7 @@
 from unicorn import * #Uc, UC_ARCH_ARM, UC_MODE_ARM
 from unicorn.arm_const import *
 from capstone import *
+import struct
 import hexdump
 import sys
 
@@ -16,6 +17,7 @@ RAM_SIZE = 0x00008000  # 32KB
 
 DEVICE_BASE = 0xFFE00000
 DEVICE_SIZE = 0x00200000 # Until the end
+
 
 class ARMv7Emulator:
     def __init__(self, rom_file):
@@ -77,8 +79,19 @@ class ARMv7Emulator:
             if address == bp:
                 print(f'[BREAKPOINT] Hit bp at {address}')
                 self.mu.emu_stop()
+                self.breakpoints.remove(bp)
 
-        print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
+        for name, p in peripherals.items():
+            if not p["handler"]:
+                continue
+
+            if hasattr(p['handler'], "update"):
+                try:
+                    p['handler'].update()
+                except NameError:
+                    print(f"[DEVICE][{name}] Handler has \"update\" but its not callable!")
+
+        # print(f'CPSR reg: 0x{self.mu.reg_read(UC_ARM_REG_CPSR):02x}')
         if ROM_BASE <= address < ROM_BASE + ROM_SIZE:
             offset = address - ROM_BASE
             instr_bytes = self.rom_data[offset:offset+size]
@@ -90,9 +103,9 @@ class ARMv7Emulator:
 
     def mem_hook(self, uc, access, address, size, value, user_data):
         # Handle devices, first check that we're indeed in the devices memory space
-        if address > DEVICE_BASE and address < (DEVICE_BASE + DEVICE_SIZE):
+        if address >= DEVICE_BASE and address < (DEVICE_BASE + DEVICE_SIZE):
             for name, p in peripherals.items():
-                if address > p['addr'] and address < p['addr']+p['size']:
+                if address >= p['addr'] and address < p['addr']+p['size']:
 
                     # Device isn't supported, get the fuck out of here
                     if not p['handler']:
@@ -102,7 +115,8 @@ class ARMv7Emulator:
                     # Send request to device
                     print(f'[DEVICE] Device {name} access @ 0x{address:02x}')
                     if access == UC_MEM_READ:
-                        p['handler']._read(address-p['addr'])
+                        toReadValue = p['handler']._read(address-p['addr'])
+                        self.mu.mem_write(address, struct.Struct('<I').pack(toReadValue))
                     elif access == UC_MEM_WRITE:
                         p['handler']._write(address-p['addr'], value)
 

@@ -1,6 +1,7 @@
 #Peripherals management
 
 from devices.IFC import *
+from devices.CM import *
 
 # List of peripherals, Devices with None handler are unsupported yet
 peripherals = {
@@ -41,7 +42,7 @@ peripherals = {
     'SMC5':   { 'addr': 0xFFE88000, 'size': 0x7c, 'handler': None }, # Unused on BSI
     'EPC':    { 'addr': 0xFFFE0000, 'size': 0x7c, 'handler': None }, # Unused on BSI
     'SFM':    { 'addr': 0xFFFE4000, 'size': 0x7c, 'handler': None }, # Unused on BSI
-    'CM':     { 'addr': 0xFFFE8000, 'size': 0x7c, 'handler': None },
+    'CM':     { 'addr': 0xFFFE8000, 'size': 0x7c, 'handler': CM() },
     'IRC':    { 'addr': 0xFFFF0000, 'size': 0x7c, 'handler': None },
     'LDMAC':  { 'addr': 0xFFFF8000, 'size': 0x7c, 'handler': None }, # Unused on BSI
     'GIC':    { 'addr': 0xFFFFF000, 'size': 0x7c, 'handler': None },

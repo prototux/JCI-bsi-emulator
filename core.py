@@ -74,7 +74,7 @@ class ARMv7Emulator:
         self.cs = Cs(CS_ARCH_ARM, CS_MODE_THUMB if newmode == 'THUMB' else CS_MODE_ARM)
 
     def hook_code(self, uc, address, size, user_data):
-         # Handle breakpoints
+        # Handle breakpoints
         for bp in self.breakpoints:
             if address == bp:
                 print(f'[BREAKPOINT] Hit bp at {address}')
@@ -149,12 +149,23 @@ class ARMv7Emulator:
             file.write(ram)
 
     def dump_registers(self):
+        registerNames = { 3: 'CPSR', 10: 'LR', 11: 'PC', 12: 'SP', 66: 'R0', 67: 'R1', 68: 'R2', 69: 'R3', 
+                 70: 'R4', 71: 'R5', 72: 'R6', 73: 'R7', 74: 'R8', 75: 'R9', 76: 'R10', 77: 'R11', 
+                 78: 'R12' }
         registers = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3, UC_ARM_REG_R4, UC_ARM_REG_R5,
                      UC_ARM_REG_R6, UC_ARM_REG_R7, UC_ARM_REG_R8, UC_ARM_REG_R9, UC_ARM_REG_R10, UC_ARM_REG_R11,
                      UC_ARM_REG_R12, UC_ARM_REG_SP, UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_CPSR]
-        print("\n[CPU Registers]")
+        print("\n--------[CPU Registers]---------")
+        print("|   Register   |     Value     |");
+        print("|--------------|---------------|");
         for reg in registers:
-            print(f"{reg}: {hex(self.mu.reg_read(reg))}")
+            registerName = registerNames[reg]
+            registerSpaces = max(0, 12 - len(registerName)) * " "
+            registerValue = hex(self.mu.reg_read(reg));
+            registerValSpaces = max(0, 12 - len(registerValue)) * " "
+            print(f"| {registerName} {registerSpaces}| {registerValue} {registerValSpaces} |")
+
+        print("--------------------------------")
 
     def dump_system_state(self):
         self.dump_memory(ROM_BASE, ROM_SIZE, "ROM")
@@ -162,25 +173,83 @@ class ARMv7Emulator:
         self.dump_registers()
         print(f"\n[IFC_MR] {hex(self.ifc_mr)}, IFC Base: {hex(self.ifc_base)}")
 
+    def manage_breakpoints(self):
+        while True:
+            
+            print("\n|-[Breakpoints]-|")
+            if len(self.breakpoints) != 0:
+                print("|---------------|")
+                for bp in self.breakpoints:
+                    bpStr = hex(bp)
+                    bpSpaces = max(0, 13 - len(bpStr)) * " "
+                    print(f"| {bpStr} {bpSpaces}|")
+            else:
+                print("|  !! EMPTY !!  |")
+            print("|---------------|")
+
+            print("\n1. Back to main menu")
+            print("2. Add Breakpoint")
+
+            if len(self.breakpoints) != 0:
+                print("3. Remove breakpoint")
+
+            choice = input("Select an option: ")
+            if choice == '1' or choice == '':
+                break
+            elif choice == '2':
+                addr = int(input("Address: "), 16)
+                self.breakpoints.append(addr)
+            elif choice == '3' and len(self.breakpoints) != 0:
+                print("\n|  Num  | Breakpoint |")
+                print("|-------|------------|")
+                counter = 0
+                for bp in self.breakpoints:
+                    counter += 1
+                    number = str(counter)
+                    bpStr = str(bp)
+                    numberSpaces = max(0, 3 - len(number)) * " "
+                    bpSpaces = max(0, 10 - len(bpStr)) * " "
+                    print(f"| [{number}] {numberSpaces}| {bpStr} {bpSpaces}|")
+                print("|-------|------------|")
+
+                nbr = int(input("Type number to delete: ")) - 1
+
+                if nbr < 0 or nbr >= len(self.breakpoints):
+                    print("Invalid delete input!")
+                    continue
+
+                self.breakpoints.remove(self.breakpoints[nbr])
+
+
 
     # Shit, should be removed
     def menu(self):
+        checkInstructionSet = True
         while True:
-            self.switchmode('THUMB' if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20 else 'ARM')
+            # For whatever fucking reasion it will change instruction set when you jump address sometimes
+            # idk this checkInstructionSet is also a stupid hack, why cant this just work
+            if checkInstructionSet:
+                self.switchmode('THUMB' if self.mu.reg_read(UC_ARM_REG_CPSR) & 0x20 else 'ARM')
+            else:
+                checkInstructionSet = True
+
             print("\nMenu:")
             print("1. Step Over Instruction")
             print("2. Start Emulation")
             print("3. Show Memory Dump")
             print("4. Show Registers")
             print("5. Show ROM Dump")
-            print("6. Set breakpoint")
+            print("6. Manage breakpoints")
             print("7. Write memdump")
+            print("8. Jump to Address")
             print("0. Exit")
             choice = input("Select an option: ")
 
             if choice == '1' or choice == '':
+                checkInstructionSet = True
                 self.step()
             elif choice == '2':
+                checkInstructionSet = True
                 self.start()
             elif choice == '3':
                 self.dump_memory(RAM_BASE, RAM_SIZE, "RAM")
@@ -189,10 +258,13 @@ class ARMv7Emulator:
             elif choice == '5':
                 self.dump_memory(ROM_BASE, ROM_SIZE, "ROM")
             elif choice == '6':
-                addr = int(input("Address: "), 16)
-                self.breakpoints.append(addr)
+                self.manage_breakpoints()
             elif choice == '7':
                 self.memdump(input("File path: "))
+            elif choice == '8':
+                addr = int(input("Jump to: "), 16)
+                self.mu.reg_write(UC_ARM_REG_PC, addr)
+                checkInstructionSet = False
             elif choice == '0':
                 sys.exit(0)
             else:
